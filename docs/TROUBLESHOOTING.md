@@ -768,7 +768,12 @@ Things that bit us or contributors, so they don't bite you. Commands use `tools/
   themed before and did nothing on a fresh install or right after a reinstall. `theme.sh` now removes the
   shell's copy and writes through the `ThemeProvider` first (the provider cannot truncate a file the shell
   owns); on an older checkout, pushing the theme again after `launcher/build-and-install.sh` has written
-  the files once also fixes the ownership.
+  the files once also fixes the ownership. The `wallpapers/` folder went the same way, seen on a Vestel
+  BODRUM (Android 14, `UKNV.260428.001`): `theme.sh` made it with `mkdir`, so it belonged to the shell
+  (`drwxrws--- shell ext_data_rw`) and the provider got EACCES writing the pictures into it, while the
+  config still landed. `theme.sh` now leaves that folder to the provider. A set that already has one from an
+  older checkout needs it removed once (it is empty), then push the theme again:
+  `tools/tv.py 'rmdir /sdcard/Android/data/com.gathin.tvhome/files/wallpapers'`.
 - **Google TV comes back after a few remote presses**, seen on XGIMI (MoGo 3 Pro, Google TV 14). The
   remote's app buttons (YouTube, Netflix, Prime Video), the programmable button, the profile button and power
   all send F keys that the system hands to `com.xgimi.xrmservice/.XgimiGlobalKeyBroadcast` as global keys
@@ -1036,8 +1041,15 @@ running back on the list the next time it starts; a helper turned off in Setting
   button opened Google TV. `restore_key_services` does not repair this state: `ServiceRepair` writes
   `accessibility_enabled 1` only on the path that also puts a missing helper back on the list, and here
   the list was complete. Write the flag back, then read the dump again; toggling the service off and on
-  in Accessibility, which is what the owner did, brought the redirect back for that session. Whether the
-  flag survives the next reboot was not retested on that set, and what cleared it is not established.
+  in Accessibility, which is what the owner did, brought the redirect back for that session. Whether
+  that manual flag change survived the next reboot was not retested; the cold-boot follow-up below
+  tests the fork's separate opt-in startup repair. In one cold-boot test of that repair, TCL had reset
+  `AUTO_START` to `ignore`; the boot log showed the firmware blocking both the accessibility-service
+  bind and the boot receiver. After allowing `AUTO_START` for `com.gathin.tvhome` and persisting app-op settings with
+  `appops write-settings`, the next cold boot left `accessibility_enabled` at `1`, HomeKeyService
+  bound, and CleanYourTV in the foreground about eight seconds after Google TV started. The owner
+  confirmed this one run; it does not establish that the upstream launcher starts at boot or guarantee
+  every reboot. Google TV was left enabled. What first reset either setting is not established.
   On a TCL 65C655 Pro (`G03`, Android 11, [`examples/tcl-55c725`](../examples/tcl-55c725/README.md)) every
   one of three reboots left the same state, and there writing the flag back alone bound nothing; clearing
   `enabled_accessibility_services` and writing it back, as `build-and-install` does, did:

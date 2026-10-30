@@ -38,6 +38,7 @@ DEFAULT = "en"
 # qualifier Android reads (`sr-Latn`) to the English name the page uses ("Serbian (Latin)").
 NAMES = {
     "ar": "Arabic",
+    "ast": "Asturian",
     "sr-Latn": "Serbian (Latin)",
     "bn": "Bangla",
     "ca": "Catalan",
@@ -60,6 +61,7 @@ NAMES = {
     "pt": "Portuguese",
     "pt-PT": "Portuguese",
     "ru": "Russian",
+    "sl": "Slovenian",
     "th": "Thai",
     "tr": "Turkish",
     "uk": "Ukrainian",
