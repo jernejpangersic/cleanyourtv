@@ -21,11 +21,12 @@ JSON object is named before the key is written, and a write it cannot make says 
 set's own arguments are read first: a switch without a value, a --theme without the folder behind it, and a word
 left over are answered with the usage line and exit 2 before a theme folder is read or written. list, status,
 show, install and remove read their own words the same way, before anything is read from this checkout or asked
-of the TV.
+of the TV. install then reads the add-on's entry: extra arguments are passed to its custom installer, but an
+add-on without one takes only its name and refuses extra arguments before anything is built, pushed or installed.
 
 Exit status: 0 the command ran, 1 a command on the TV or a script this checkout runs failed, 2 the command line
 asked for something this script does not do - a command it does not have, or a word the command would drop - which
-is answered before the READMEs are read or the TV is asked anything.
+is answered before a script is started or the TV is asked anything.
 """
 import json
 import math
@@ -324,6 +325,11 @@ def install_addon(item, extra):
     if item["script"]:
         # The creator's own script, as their README says to run it.
         return run(["bash", str(folder / item["script"])] + extra, ROOT)
+    if extra:
+        sys.stderr.write(f"{item['id']} has no custom installer, so install takes only its name, "
+                         f"not {' '.join(extra)!r}: {USAGE_LINES['install']}. "
+                         "Nothing was built, pushed or installed.\n")
+        return 2
     # No script: the steps addons/README.md gives for every add-on.
     # Windows resolves a relative program against this process's directory, not cwd, so give the full path.
     gradlew = str(folder / "gradlew.bat") if os.name == "nt" else "./gradlew"
