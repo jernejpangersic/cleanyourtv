@@ -2,7 +2,7 @@
 """One place for the project's add-ons, themes and switches: what each is, its screenshot, what is on the TV,
 and installing, updating or removing it the way its creator wrote it down. Nothing is downloaded: everything comes
 from this checkout of the repo, and every install runs the creator's own script (an add-on's install.sh or
-build-and-install.sh, or the steps in addons/README.md; tools/theme.sh for themes).
+build-and-install.sh, or the steps in addons/README.md; tools/theme.sh or theme.ps1 for themes).
 
     tools/venv/bin/python -I tools/manage.py list [addons|themes|switches]
     tools/venv/bin/python -I tools/manage.py show <add-on, theme or switch>
@@ -12,7 +12,7 @@ build-and-install.sh, or the steps in addons/README.md; tools/theme.sh for theme
     TV_HOST=<tv ip> tools/venv/bin/python -I tools/manage.py set <switch> <json value> --theme <your theme folder>
 
 install on an installed add-on updates it (pm install -r). set writes the key into a theme folder of your own and
-pushes it with tools/theme.sh, as themes/README.md describes; it never edits a folder in this checkout, so pointing
+pushes it with the platform's theme script, as themes/README.md describes; it never edits a folder in this checkout, so pointing
 --theme at the project's themes/ or examples/ is refused before anything is written. set reads the value the way
 the key's own type in the Keys table needs - true or false for a bool, a JSON list, object or number where the
 table says so, the text itself for a string - and refuses one the launcher would ignore or a number outside the
@@ -23,6 +23,11 @@ left over are answered with the usage line and exit 2 before a theme folder is r
 show, install and remove read their own words the same way, before anything is read from this checkout or asked
 of the TV.
 
+On Windows, theme install and set use PowerShell (pwsh, or powershell when pwsh is not on PATH), without loading
+profiles or changing execution policy. Add-ons with their own shell installer still need Bash. A theme install
+takes only its name; script arguments belong to add-ons. If set saves the local file but the push fails, it
+reports that separately: the TV may have received only part of the theme.
+
 Exit status: 0 the command ran, 1 a command on the TV or a script this checkout runs failed, 2 the command line
 asked for something this script does not do - a command it does not have, or a word the command would drop - which
 is answered before the READMEs are read or the TV is asked anything.
@@ -31,6 +36,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -293,15 +299,28 @@ def theme_config(folder):
 
 # ---------------------------------------------------------------- the TV
 
+def platform_usage(text):
+    if sys.platform == "win32":
+        return text.replace("TV_HOST=<tv ip> ", "$env:TV_HOST = '<tv ip>'; ").replace(
+            "tools/venv/bin/python -I tools/manage.py",
+            r".\tools\venv\Scripts\python.exe -I .\tools\manage.py")
+    return text
+
+
 def tv_python():
     for p in (TOOLS / "venv" / "bin" / "python", TOOLS / "venv" / "Scripts" / "python.exe"):
         if p.is_file():
             return str(p)
+    if sys.platform == "win32":
+        sys.exit(r"run: python -m venv tools\venv; "
+                 r".\tools\venv\Scripts\python.exe -m pip install -r tools\requirements.txt")
     sys.exit("run: python3 -m venv tools/venv && tools/venv/bin/pip install -r tools/requirements.txt")
 
 
 def tv(command):
     if not os.environ.get("TV_HOST"):
+        if sys.platform == "win32":
+            sys.exit("set $env:TV_HOST to the TV IP address")
         sys.exit("set TV_HOST to the TV IP address")
     r = subprocess.run([tv_python(), "-I", str(TOOLS / "tv.py"), command], capture_output=True, text=True)
     # A failed read is unknown, not empty: never report "not installed" for a TV that didn't answer.
@@ -317,6 +336,23 @@ def installed_packages():
 def run(cmd, cwd):
     print("$ " + " ".join(cmd), flush=True)
     return subprocess.run(cmd, cwd=cwd).returncode
+
+
+def theme_command(folder):
+    if sys.platform == "win32":
+        shell = shutil.which("pwsh") or shutil.which("powershell")
+        if not shell:
+            sys.exit("PowerShell was not found: put pwsh or powershell on PATH. Nothing was written or pushed.")
+        return [shell, "-NoProfile", "-NonInteractive", "-File", str(TOOLS / "theme.ps1"), "-Theme", str(folder)]
+    return ["bash", str(TOOLS / "theme.sh"), str(folder)]
+
+
+def push_theme(command):
+    try:
+        return run(command, ROOT)
+    except OSError as e:
+        sys.stderr.write(f"cannot start {command[0]}: {reason(e)}. Nothing was pushed.\n")
+        return 1
 
 
 def install_addon(item, extra):
@@ -371,11 +407,20 @@ def cmd_show(name):
             print(f"{k:>12}: {item[k]}")
     if item["kind"] == "add-on":
         how = item["script"] or "the steps in addons/README.md"
-        print(f"{'install':>12}: TV_HOST=<tv ip> tools/venv/bin/python -I tools/manage.py install {item['id']}  (runs {how})")
+        if sys.platform == "win32" and item["script"]:
+            how += "; requires Bash"
+        label = "install"
+        instruction = f"TV_HOST=<tv ip> tools/venv/bin/python -I tools/manage.py install {item['id']}  (runs {how})"
     elif item["kind"] == "theme":
-        print(f"{'install':>12}: TV_HOST=<tv ip> tools/theme.sh themes/{item['id']}")
+        label = "install"
+        if sys.platform == "win32":
+            instruction = f"TV_HOST=<tv ip> tools/venv/bin/python -I tools/manage.py install {item['id']}"
+        else:
+            instruction = f"TV_HOST=<tv ip> tools/theme.sh themes/{item['id']}"
     else:
-        print(f"{'set':>12}: TV_HOST=<tv ip> tools/venv/bin/python -I tools/manage.py set {item['id']} <value> --theme <your theme folder>")
+        label = "set"
+        instruction = f"TV_HOST=<tv ip> tools/venv/bin/python -I tools/manage.py set {item['id']} <value> --theme <your theme folder>"
+    print(f"{label:>12}: {platform_usage(instruction)}")
     return 0
 
 
@@ -406,7 +451,11 @@ def cmd_install(name, extra):
     if not item or item["kind"] == "switch":
         sys.exit(f"no add-on or theme called {name}")
     if item["kind"] == "theme":
-        return run(["bash", str(TOOLS / "theme.sh"), str(ROOT / "themes" / item["id"])] + extra, ROOT)
+        if extra:
+            sys.stderr.write(f"install of a theme takes only its name, not {' '.join(extra)!r}. "
+                             "Nothing was pushed.\n")
+            return 2
+        return push_theme(theme_command(ROOT / "themes" / item["id"]))
     return install_addon(item, extra)
 
 
@@ -431,6 +480,7 @@ def cmd_set(key, value, theme_folder):
     if problem:
         sys.exit(problem)
     parsed = value_as(key, item, value)   # before the file is written or anything is pushed
+    command = theme_command(folder)
     data[key] = parsed
     f = folder / "config.json"
     try:
@@ -441,11 +491,15 @@ def cmd_set(key, value, theme_folder):
         # written and the theme on the TV is untouched, so say which file and why rather than a traceback.
         sys.exit(f"cannot write {f}: {reason(e)}. Nothing was pushed.")
     print(f"{key} = {json.dumps(parsed)} in {f}")
-    return run(["bash", str(TOOLS / "theme.sh"), str(folder)], ROOT)
+    code = push_theme(command)
+    if code:
+        sys.stderr.write(f"Saved {f} locally, but the theme push failed (exit {code}). "
+                         "The TV may be only partly updated; the local edit was kept.\n")
+    return code
 
 
 SET_USAGE = ("set takes a switch, its value and --theme <your theme folder>, e.g. "
-             "set hidden_apps '[\"a\", \"b\"]' --theme ~/my-theme")
+             "set hidden_apps '[\"a\", \"b\"]' --theme my-theme")
 
 
 class Usage(Exception):
@@ -535,7 +589,7 @@ def set_args(args):
 
 def main(argv):
     if not argv or argv[0] in ("-h", "--help", "help"):
-        print(__doc__)
+        print(platform_usage(__doc__))
         return 0
     c, args = argv[0], argv[1:]
     if c == "set":
@@ -546,7 +600,7 @@ def main(argv):
             return 2
         return cmd_set(key, value, theme)
     if c not in WORDS:
-        print(__doc__)
+        print(platform_usage(__doc__))
         return 2
     try:
         args = own_words(c, args)

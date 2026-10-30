@@ -14,8 +14,24 @@ powershell -ExecutionPolicy Bypass -File tools\theme.ps1 -TvHost 192.168.1.50 th
 
 `tools/venv/bin/python -I tools/manage.py list themes` and `list switches` list them from this file, `show <name>` gives one with its
 screenshot, and `manage.py set <switch> <value> --theme <your folder>` writes a key into a theme folder of your own
-and pushes it with `theme.sh`. The folder has to be outside this checkout: one under `themes/` or `examples/` is
+and pushes it with `theme.sh` (`theme.ps1` on Windows). The folder has to be outside this checkout: one under `themes/` or `examples/` is
 refused (copy a theme first), and a `config.json` it cannot read is named before anything is written or pushed.
+
+On Windows, the manager's theme operations need no Bash: they use `pwsh`, or `powershell` if `pwsh` is not on
+PATH, without loading profiles or changing execution policy. If the computer's policy blocks scripts, the
+PowerShell error is reported rather than bypassed. From the repository root in PowerShell:
+
+```powershell
+$env:TV_HOST = '192.168.1.50'
+.\tools\venv\Scripts\python.exe -I .\tools\manage.py list themes
+.\tools\venv\Scripts\python.exe -I .\tools\manage.py install aurora
+Copy-Item .\themes\aurora "$HOME\my-theme" -Recurse
+.\tools\venv\Scripts\python.exe -I .\tools\manage.py set columns 6 --theme "$HOME\my-theme"
+```
+
+`install <theme>` takes only the theme's name, not script arguments. `set` saves the local `config.json`
+before pushing it; if the push fails, the edit stays on disk and the error says the TV may be only partly
+updated. Add-ons with custom shell installers still need Bash; this native Windows support covers themes.
 
 | Theme | What it does | Screenshot |
 |---|---|---|

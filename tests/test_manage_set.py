@@ -40,6 +40,7 @@ class SetValueTest(unittest.TestCase):
         # cmd_set ends by pushing the theme with tools/theme.sh; the tests stop before the TV.
         patcher = mock.patch.object(manage, "run")
         self.push = patcher.start()
+        self.push.return_value = 0
         self.addCleanup(patcher.stop)
 
     def set_key(self, key, value):
@@ -225,6 +226,7 @@ class SetThemeFolderTest(unittest.TestCase):
         self.config = self.theme / "config.json"
         patcher = mock.patch.object(manage, "run")
         self.push = patcher.start()
+        self.push.return_value = 0
         self.addCleanup(patcher.stop)
 
     def set_key(self, key="dock_band", value="true", folder=None):
@@ -249,7 +251,8 @@ class SetThemeFolderTest(unittest.TestCase):
                 with self.subTest(encoding=encoding, newline=newline):
                     self.config.write_bytes(text.replace("\n", newline).encode(encoding))
                     self.push.reset_mock()
-                    self.assertIsNone(self.set_key("dock_band", "true"))
+                    with mock.patch.object(sys, "platform", "linux"):
+                        self.assertIsNone(self.set_key("dock_band", "true"))
                     written = self.config.read_bytes()
                     self.assertFalse(written.startswith(b"\xef\xbb\xbf"))
                     updated = json.loads(written.decode("utf-8"))
