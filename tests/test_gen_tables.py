@@ -323,6 +323,10 @@ class GeneratorTest(unittest.TestCase):
                  (tv("X", "X", colour="red"), "unknown key"),
                  (tv("X", "X", notes="a | b"), "split the table cell"),
                  (tv("X\n", "X"), "one line"),
+                 # A carriage return reads back as a newline, so --check would fail on every run after.
+                 (tv("X", "X", notes="Disables X\rKeeps Y"), '"notes" has a control character U+000D'),
+                 (tv("X", "X", notes="a\tb"), '"notes" has a control character U+0009'),
+                 (tv("X", "X", notes="a\u2028b"), '"notes" has a control character U+2028'),
                  (tv("X", "X", notes="[note](../docs/devices/none.md)"), "leads nowhere"),
                  # Not a string: refused by name, where the link check used to end in a TypeError (exit 1).
                  (tv("X", "X", notes=["a", "b"]), '"notes" must be'),
