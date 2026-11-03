@@ -45,6 +45,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import statistics
 import sys
 import time
@@ -417,7 +418,8 @@ def restore_accessibility(tv, package, services):
             merged.append(service)
             added = True
     if added:
-        tv.shell("settings put secure enabled_accessibility_services " + ":".join(merged))
+        # Quoted: inner-class services (`pkg/.Foo$Service`) would otherwise lose `$Service` to the shell.
+        tv.shell("settings put secure enabled_accessibility_services " + shlex.quote(":".join(merged)))
         tv.shell("settings put secure accessibility_enabled 1")
 
 
