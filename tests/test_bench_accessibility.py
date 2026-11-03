@@ -11,6 +11,9 @@ Two problems, both found on a TCL BeyondTV2 (Android TV 9) while measuring the l
 2. It restored the list *before* the cold-start measurement. Writing that setting makes the system
    bind the service, which starts the launcher's process — so the "cold start" measured a warm one.
 
+3. It wrote the merged list back unquoted, so the TV's shell expanded `$`: an inner-class service
+   such as `com.x/.Foo$Service`, ours or another app's, became `com.x/.Foo`.
+
 The TV is a dict here: the point is the commands the tool would send.
 
 Run from the repository root:
@@ -23,6 +26,34 @@ from tools import bench
 
 OURS = "com.gathin.tvhome/.KeyRemapService"
 OTHER = "com.exemplo.outroapp/.Servico"
+INNER = "com.exemplo.outroapp/.Leitor$Servico"
+
+
+def sh_word(text):
+    """One word as `sh` reads it: quotes removed, unquoted and double-quoted `$name` expanded (to "")."""
+    out, i, quote = [], 0, None
+    while i < len(text):
+        c = text[i]
+        if quote == "'":
+            if c == "'":
+                quote = None
+            else:
+                out.append(c)
+        elif c == "\\" and i + 1 < len(text):
+            i += 1
+            out.append(text[i])
+        elif c in "'\"" and quote is None:
+            quote = c
+        elif c == '"' and quote == '"':
+            quote = None
+        elif c == "$" and i + 1 < len(text) and (text[i + 1].isalnum() or text[i + 1] == "_"):
+            i += 1
+            while i + 1 < len(text) and (text[i + 1].isalnum() or text[i + 1] == "_"):
+                i += 1
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
 
 
 class FakeTV:
@@ -37,7 +68,7 @@ class FakeTV:
         if command.startswith("settings get secure enabled_accessibility_services"):
             return self.setting
         if command.startswith("settings put secure enabled_accessibility_services "):
-            self.setting = command.split(" ", 4)[4]
+            self.setting = sh_word(command.split(" ", 4)[4])
             return ""
         if command.startswith("am force-stop "):
             # This is what the TV does: the stopped package's services leave the list.
@@ -68,6 +99,12 @@ class RestoreAccessibilityTest(unittest.TestCase):
         tv = FakeTV("com.gathin.tvhome/com.gathin.tvhome.KeyRemapService")
         bench.restore_accessibility(tv, "com.gathin.tvhome", [OURS])
         self.assertEqual(tv.setting.count("KeyRemapService"), 1, tv.setting)
+
+    def test_inner_class_service_survives_the_shell(self):
+        """`$` in another app's service must reach `settings` as typed, not be expanded by `sh`."""
+        tv = FakeTV(INNER)
+        bench.restore_accessibility(tv, "com.gathin.tvhome", [OURS])
+        self.assertEqual(tv.setting, f"{INNER}:{OURS}")
 
     def test_null_setting_is_treated_as_empty(self):
         tv = FakeTV("null")
